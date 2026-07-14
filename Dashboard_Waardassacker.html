@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="nl">
+
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Grondwaterstanden Waardassacker</title>
+
+<style>
+
+body{
+    font-family:Segoe UI, Arial, sans-serif;
+    margin:20px;
+    background:#f5f6f8;
+}
+
+h1{
+    color:#005a9c;
+}
+
+button{
+    background:#0078d4;
+    color:white;
+    border:none;
+    border-radius:8px;
+    padding:10px 16px;
+    margin:4px;
+    cursor:pointer;
+}
+
+button:hover{
+    background:#005ea6;
+}
+
+.card{
+    background:white;
+    border-radius:10px;
+    padding:15px;
+    margin:10px 0;
+    box-shadow:0 2px 8px rgba(0,0,0,0.15);
+}
+
+#chartContainer{
+    margin-top:20px;
+    background:white;
+    padding:15px;
+    border-radius:10px;
+    box-shadow:0 2px 8px rgba(0,0,0,0.15);
+}
+
+canvas{
+    width:100%;
+    height:500px;
+    border:1px solid #ddd;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<h1>Grondwaterstanden Waardassacker</h1>
+
+<h2>Wie bent u?</h2>
+
+<div id="buttons"></div>
+
+<hr>
+
+<div id="results"></div>
+
+<div id="chartContainer" style="display:none">
+
+<h2>Verloop laatste jaar</h2>
+
+<canvas id="chart" width="1200" height="500"></canvas>
+
+</div>
+
+<script>
+
+let groundwaterData = [];
+
+fetch("./groundwater.json")
+.then(r => r.json())
+.then(data => {
+
+    groundwaterData = data;
+
+    const owners =
+        [...new Set(
+            data.map(x => x.owner)
+        )];
+
+    const buttons =
+        document.getElementById("buttons");
+
+    owners.forEach(owner => {
+
+        const btn =
+            document.createElement("button");
+
+        btn.innerText = owner;
+
+        btn.addEventListener(
+            "click",
+            function(){
+                showOwner(owner);
+            }
+        );
+
+        buttons.appendChild(btn);
+
+    });
+
+});
+
+function getType(name){
+
+    const referenties = [
+        "K070164A",
+        "K070166A",
+        "K070167A",
+        "L070058A"
+    ];
+
+    if(referenties.includes(name)){
+        return "Referentie";
+    }
+
+    return "AWIS";
+}
+
+function showOwner(owner){
+
+    const points =
+        groundwaterData.filter(
+            p => p.owner === owner
+        );
+
+    let html =
+        "<h2>" + owner + "</h2>";
+
+    points.forEach(point => {
+
+        html +=
+
+        `<div class="card">
+
+            <h3>${point.name}</h3>
+<p>${getType(point.name)}</p>
+
+            <b>
+                ${Math.round(point.current)}
+                cm onder maaiveld
+            </b>
+
+        </div>`;
+
+    });
+
+    document.getElementById(
+        "results"
+    ).innerHTML = html;
+
+    drawGraph(points);
+
+}
+
+function drawGraph(points){
+
+    document.getElementById(
+        "chartContainer"
+    ).style.display = "block";
+
+    const canvas =
+        document.getElementById("chart");
+
+    const ctx =
+        canvas.getContext("2d");
+
+    ctx.clearRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+    const colors = [
+        "blue",
+        "red",
+        "green",
+        "purple",
+        "orange",
+        "brown",
+        "black"
+    ];
+
+    const leftMargin = 80;
+    const rightMargin = 30;
+    const topMargin = 20;
+    const bottomMargin = 50;
+
+    const maxY = 0;
+const minY = -140;
+
+let minDate = null;
+let maxDate = null;
+
+points.forEach(point => {
+
+    point.measurements.forEach(m => {
+
+        const d = new Date(m.dateAndTime);
+
+        if(minDate === null || d < minDate){
+            minDate = d;
+        }
+
+        if(maxDate === null || d > maxDate){
+            maxDate = d;
+        }
+
+    });
+
+});
+
+    ctx.strokeStyle = "black";
+    ctx.lineWidth = 1;
+
+    /* Y-as */
+
+    ctx.beginPath();
+    ctx.moveTo(
+        leftMargin,
+        topMargin
+    );
+
+    ctx.lineTo(
+        leftMargin,
+        canvas.height - bottomMargin
+    );
+
+    ctx.stroke();
+
+    /* X-as */
+
+    ctx.beginPath();
+    ctx.moveTo(
+        leftMargin,
+        canvas.height - bottomMargin
+    );
+
+    ctx.lineTo(
+        canvas.width - rightMargin,
+        canvas.height - bottomMargin
+    );
+
+    ctx.stroke();
+
+    /* Y-labels */
+
+    ctx.fillStyle = "black";
+
+    for(let value = 0; value >= -140; value -= 10){
+
+        const y =
+            canvas.height -
+            bottomMargin -
+            (
+                (value-minY)
+                /
+                (maxY-minY)
+            )
+            *
+            (
+                canvas.height -
+                topMargin -
+                bottomMargin
+            );
+
+        ctx.fillText(
+            Math.round(value) + " cm",
+            10,
+            y + 4
+        );
+
+        ctx.strokeStyle = "#dddddd";
+
+        ctx.beginPath();
+        ctx.moveTo(
+            leftMargin,
+            y
+        );
+
+        ctx.lineTo(
+            canvas.width-rightMargin,
+            y
+        );
+
+        ctx.stroke();
+    }
+
+    points.forEach((point,index)=>{
+
+        const data =
+            point.measurements;
+
+        ctx.beginPath();
+
+        ctx.strokeStyle =
+            colors[index % colors.length];
+
+        data.forEach((m,i)=>{
+
+            const currentDate =
+    new Date(m.dateAndTime);
+
+const x =
+    leftMargin +
+    (
+        (currentDate - minDate)
+        /
+        (maxDate - minDate)
+    )
+    *
+    (
+        canvas.width -
+        leftMargin -
+        rightMargin
+    );
+
+            const y =
+                canvas.height -
+                bottomMargin -
+                (
+                    (m.level-minY)
+                    /
+                    (maxY-minY)
+                )
+                *
+                (
+                    canvas.height -
+                    topMargin -
+                    bottomMargin
+                );
+
+            if(i===0){
+                ctx.moveTo(x,y);
+            }
+            else{
+                ctx.lineTo(x,y);
+            }
+
+        });
+
+        ctx.stroke();
+
+        ctx.fillStyle =
+            colors[index % colors.length];
+
+        ctx.fillText(
+            point.name,
+            canvas.width - 180,
+            20 + (index*18)
+        );
+
+    });
+
+    /* X-labels */
+
+    for(let i=0; i<=5; i++){
+
+    const currentDate =
+        new Date(
+            minDate.getTime() +
+            ((maxDate - minDate)/5) * i
+        );
+
+    const x =
+        leftMargin +
+        (i/5) *
+        (
+            canvas.width -
+            leftMargin -
+            rightMargin
+        );
+
+    const label =
+        currentDate
+        .toISOString()
+        .substring(0,10);
+
+    ctx.fillText(
+        label,
+        x - 30,
+        canvas.height - 20
+    );
+}
+
+}
+
+</script>
+
+</body>
+
+</html>
