@@ -153,9 +153,25 @@ function showOwner(owner){
 <p>${getType(point.name)}</p>
 
             <b>
-                ${Math.round(point.current)}
-                cm onder maaiveld
-            </b>
+    ${
+        point.current === null
+        ? "Nog geen metingen beschikbaar"
+        : `${Math.round(point.current)} cm onder maaiveld`
+    }
+</b>
+
+<br><br>
+
+Laatste update:
+
+${
+    point.measurements.length
+    ? point.measurements[
+        point.measurements.length - 1
+      ].dateAndTime
+        .replace("T"," ")
+    : "onbekend"
+}
 
         </div>`;
 
