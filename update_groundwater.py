@@ -17,6 +17,14 @@ POINTS = [
         "y": 475738.019
     },
     {
+    "id": 81,
+    "name": "K070152A",
+    "owner": "Kool",
+    "type": "AWIS",
+    "x": 124068,
+    "y": 475730
+},
+    {
         "id": 75,
         "name": "K070164A",
         "owner": "de Rooij",
