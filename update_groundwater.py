@@ -3,9 +3,6 @@ import json
 import requests
 import urllib3
 
-from datetime import datetime, timedelta, timezone
-
-# Verberg waarschuwingen door verify=False
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 USERNAME = os.environ["DIVER_USERNAME"]
@@ -13,18 +10,10 @@ PASSWORD = os.environ["DIVER_PASSWORD"]
 
 BASE_URL = "https://diver-hub.com/private/api/v1"
 
-# Data begint op 1 maart.
-# Pas het jaar aan als nodig, bijvoorbeeld "2025-03-01".
-START_DATE_TEXT = "2026-03-01"
-
-# Ruwe data in blokken ophalen.
-# Als Diver-HUB nog steeds 500-errors geeft, zet deze op 14 of 7.
-CHUNK_DAYS = 30
-
 # Omrekening:
-# airPressure komt uit de API in hPa.
-# pressure komt uit de API in cmH2O.
-# 1 hPa = 1.019716 cmH2O.
+# airPressure uit API = hPa
+# pressure uit API = cmH2O
+# 1 hPa = 1.019716 cmH2O
 HPA_TO_CMH2O = 1.019716
 
 POINTS = [
@@ -111,103 +100,86 @@ POINTS = [
 ]
 
 
-def parse_start_date(date_text):
-    return datetime.strptime(date_text, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-
-
-def fetch_diver_data_for_point(point, headers, start_dt, end_dt):
+def normalize_measurements(response_json):
     """
-    Haalt alle ruwe DiverData op voor één monitoring point.
-    De data wordt in blokken opgehaald om API-errors bij grote periodes te voorkomen.
+    Zorgt dat de API-response altijd als lijst wordt behandeld.
+
+    Soms geeft een API direct een lijst terug:
+        [{...}, {...}]
+
+    Soms zit de lijst in een veld zoals:
+        {"data": [{...}, {...}]}
+        {"items": [{...}, {...}]}
+        {"measurements": [{...}, {...}]}
     """
 
-    all_measurements = []
-    seen_timestamps = set()
+    if isinstance(response_json, list):
+        return response_json
 
-    chunk_start = start_dt
+    if isinstance(response_json, dict):
+        for key in ["data", "items", "measurements", "values", "result"]:
+            value = response_json.get(key)
 
-    while chunk_start < end_dt:
-        chunk_end = min(
-            chunk_start + timedelta(days=CHUNK_DAYS),
-            end_dt
-        )
+            if isinstance(value, list):
+                return value
 
-        url = (
-            f"{BASE_URL}/DiverData/"
-            f"ByMonitoringPoint/{point['id']}"
-        )
+    return []
 
-        params = {
-            "startTime": int(chunk_start.timestamp()),
-            "endTime": int(chunk_end.timestamp())
-        }
 
-        print(
-            f"  {point['name']}: ophalen "
-            f"{chunk_start.date()} t/m {chunk_end.date()}"
-        )
+def fetch_diver_data(point, headers):
+    """
+    Haalt alle ruwe DiverData op voor één monitoring point,
+    zonder startTime en endTime in de URL.
+    """
 
-        response = requests.get(
-            url,
-            headers=headers,
-            params=params,
-            verify=False,
-            timeout=60
-        )
-
-        if not response.ok:
-            print("  Fout bij DiverData request")
-            print("  URL:", response.url)
-            print("  Status:", response.status_code)
-            print("  Response:", response.text[:2000])
-            response.raise_for_status()
-
-        chunk_data = response.json()
-
-        for measurement in chunk_data:
-            timestamp = measurement.get("dateAndTime")
-
-            if timestamp is None:
-                continue
-
-            if timestamp not in seen_timestamps:
-                seen_timestamps.add(timestamp)
-                all_measurements.append(measurement)
-
-        # Een seconde opschuiven voorkomt dubbele metingen op de blokgrens.
-        chunk_start = chunk_end + timedelta(seconds=1)
-
-    all_measurements.sort(
-        key=lambda m: m.get("dateAndTime", "")
+    url = (
+        f"{BASE_URL}/DiverData/"
+        f"ByMonitoringPoint/{point['id']}"
     )
 
-    return all_measurements
+    response = requests.get(
+        url,
+        headers=headers,
+        verify=False,
+        timeout=120
+    )
+
+    if not response.ok:
+        print("Fout bij ophalen DiverData")
+        print("Meetpunt:", point["name"], point["id"])
+        print("URL:", response.url)
+        print("Status:", response.status_code)
+        print("Response:", response.text[:2000])
+        response.raise_for_status()
+
+    response_json = response.json()
+    measurements = normalize_measurements(response_json)
+
+    return measurements
 
 
 def calculate_groundwater_levels(measurements, point):
     """
-    Zet ruwe drukdata om naar grondwaterstanden onder maaiveld.
+    Zet ruwe drukdata om naar grondwaterstand onder maaiveld.
 
-    API-velden:
-    - pressure: absolute druk van de diver in cmH2O
-    - airPressure: luchtdruk in hPa
-
-    Berekening:
+    Formule:
     air_pressure_cm = airPressure * 1.019716
     water_column_m = (pressure - air_pressure_cm) / 100
     waterlevel_nap = diver_nap + water_column_m
     level = maaiveld_nap - waterlevel_nap
 
-    level is dus de grondwaterstand in meter onder maaiveld.
+    level = meter onder maaiveld.
     """
 
-    calculated_measurements = []
+    calculated = []
+    skipped = 0
 
     for measurement in measurements:
         pressure = measurement.get("pressure")
         air_pressure = measurement.get("airPressure")
 
         if pressure is None or air_pressure is None:
+            skipped += 1
             continue
 
         air_pressure_cm = air_pressure * HPA_TO_CMH2O
@@ -229,17 +201,23 @@ def calculate_groundwater_levels(measurements, point):
         measurement["water_column_m"] = round(water_column_m, 4)
         measurement["waterlevel_nap"] = round(waterlevel_nap, 4)
 
-        # Deze naam blijft hetzelfde voor je dashboard.
-        # Dit is grondwaterstand in meter onder maaiveld.
+        # Dit veld gebruikt je dashboard waarschijnlijk al.
+        # Positieve waarde betekent: zoveel meter onder maaiveld.
         measurement["level"] = round(waterlevel_mv, 4)
 
-        calculated_measurements.append(measurement)
+        calculated.append(measurement)
 
-    calculated_measurements.sort(
+    calculated.sort(
         key=lambda m: m.get("dateAndTime", "")
     )
 
-    return calculated_measurements
+    if skipped > 0:
+        print(
+            f"Waarschuwing: {skipped} metingen overgeslagen bij "
+            f"{point['name']} door ontbrekende pressure of airPressure"
+        )
+
+    return calculated
 
 
 print("Inloggen op Diver-HUB...")
@@ -264,26 +242,27 @@ headers = {
 
 print("Login gelukt")
 
-start_dt = parse_start_date(START_DATE_TEXT)
-end_dt = datetime.now(timezone.utc)
-
-print(f"Data ophalen vanaf {start_dt.date()} t/m {end_dt.date()}")
-
 dashboard_data = []
 
 for point in POINTS:
     print(f"Ophalen: {point['name']}")
 
-    measurements = fetch_diver_data_for_point(
+    measurements = fetch_diver_data(
         point=point,
-        headers=headers,
-        start_dt=start_dt,
-        end_dt=end_dt
+        headers=headers
+    )
+
+    print(
+        f"  {point['name']}: {len(measurements)} ruwe metingen opgehaald"
     )
 
     measurements = calculate_groundwater_levels(
         measurements=measurements,
         point=point
+    )
+
+    print(
+        f"  {point['name']}: {len(measurements)} metingen omgerekend"
     )
 
     current = None
