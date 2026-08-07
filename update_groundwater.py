@@ -14,7 +14,9 @@ POINTS = [
         "owner": "Kool",
         "type": "AWIS",
         "x": 124638.861,
-        "y": 475638.019
+        "y": 475638.019,
+        "maaiveld_nap": -2.91,
+        "diver_nap": -4.97
     },
     {
     "id": 81,
@@ -22,7 +24,9 @@ POINTS = [
     "owner": "Kool",
     "type": "AWIS",
     "x": 124068,
-    "y": 475630
+    "y": 475630,
+    "maaiveld_nap": -2.85,
+    "diver_nap": -4.08
 },
     {
         "id": 75,
@@ -30,7 +34,9 @@ POINTS = [
         "owner": "de Rooij",
         "type": "Referentie",
         "x": 124147.697,
-        "y": 476393.577
+        "y": 476393.577,
+        "maaiveld_nap": -2.73,
+    "diver_nap": -4.82
     },
     {
         "id": 76,
@@ -38,7 +44,9 @@ POINTS = [
         "owner": "G. Paul",
         "type": "AWIS",
         "x": 124705.929,
-        "y": 475953.305
+        "y": 475953.305,
+        "maaiveld_nap": -2.96,
+    "diver_nap": -5.02
     },
     {
         "id": 77,
@@ -46,7 +54,9 @@ POINTS = [
         "owner": "Kool",
         "type": "Referentie",
         "x": 124439.016,
-        "y": 475596.567
+        "y": 475596.567,
+        "maaiveld_nap": -2.87,
+    "diver_nap": -4.92
     },
     {
         "id": 78,
@@ -54,7 +64,9 @@ POINTS = [
         "owner": "Kroon",
         "type": "Referentie",
         "x": 123980.999,
-        "y": 475854.299
+        "y": 475854.299,
+        "maaiveld_nap": -2.95,
+    "diver_nap": -5.01
     },
     {
         "id": 79,
@@ -62,7 +74,9 @@ POINTS = [
         "owner": "Gijsen",
         "type": "AWIS",
         "x": 125670.905,
-        "y": 474800.172
+        "y": 474800.172,
+        "maaiveld_nap": -2.25,
+    "diver_nap": -4.26
     },
     {
         "id": 80,
@@ -70,7 +84,9 @@ POINTS = [
         "owner": "Gijsen",
         "type": "Referentie",
         "x": 125704.377,
-        "y": 474905.177
+        "y": 474905.177,
+        "maaiveld_nap": -2.48,
+    "diver_nap": -4.45
     }
 ]
 
@@ -111,7 +127,7 @@ for p in POINTS:
     print(f"Ophalen: {p['name']}")
 
     url = (
-        f"https://diver-hub.com/private/api/v1/WaterLevels/"
+        f"https://diver-hub.com/private/api/v1/DiverData/"
         f"ByMonitoringPoint/{p['id']}"
         f"?approved=false"
         f"&reference=3"
@@ -130,7 +146,27 @@ for p in POINTS:
     measurements = r.json()
 
     for m in measurements:
-        m["level"] = -m["level"]
+
+        air_pressure_cm = (
+            m["airPressure"] * 1.01972
+        )
+    
+        water_column_m = (
+            m["pressure"]
+            - air_pressure_cm
+        ) / 100.0
+    
+        waterlevel_nap = (
+            p["diver_nap"]
+            + water_column_m
+        )
+    
+        waterlevel_mv = (
+            p["maaiveld_nap"]
+            - waterlevel_nap
+        )
+    
+        m["level"] = waterlevel_mv
 
     dashboard_data.append({
 
