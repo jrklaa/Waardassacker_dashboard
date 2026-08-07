@@ -29,7 +29,7 @@ jobs:
       - env:
           DIVER_USERNAME: ${{ secrets.DIVER_USERNAME }}
           DIVER_PASSWORD: ${{ secrets.DIVER_PASSWORD }}
-        run: python update_groundwater.py
+        run: python debug_diverdata.py
 
       - run: |
           git config user.name github-actions
