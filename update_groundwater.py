@@ -129,8 +129,6 @@ for p in POINTS:
     url = (
         f"https://diver-hub.com/private/api/v1/DiverData/"
         f"ByMonitoringPoint/{p['id']}"
-        f"?approved=false"
-        f"&reference=3"
         f"&startTime={start_time}"
         f"&endTime={end_time}"
     )
